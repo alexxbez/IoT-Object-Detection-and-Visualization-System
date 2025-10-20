@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Minimal Flask server that receives values from ESP32 with real-time updates
+Flask server for parking sensor with real-time updates
 """
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, render_template_string
 import datetime
 import json
 import time
@@ -11,16 +11,16 @@ import queue
 
 app = Flask(__name__)
 
-# Counter to track received requests
-request_count = 0
+# Store sensor data
 sensor_data = 0
+request_count = 0
 
 # Store connected clients for SSE
 message_queues = []
 
 def send_sse_update(data):
     """Send update to all connected SSE clients"""
-    for q in message_queues[:]:  # Use slice copy to avoid modification during iteration
+    for q in message_queues[:]:
         try:
             q.put(data)
         except:
@@ -28,134 +28,37 @@ def send_sse_update(data):
 
 @app.route('/')
 def home():
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Sensor Server - Real Time</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            max-width: 800px; 
-            margin: 0 auto; 
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .sensor-value {
-            font-size: 3em;
-            font-weight: bold;
-            color: #2c3e50;
-            text-align: center;
-            margin: 20px 0;
-            padding: 20px;
-            background: #ecf0f1;
-            border-radius: 5px;
-            transition: all 0.3s ease;
-        }
-        .timestamp {
-            color: #7f8c8d;
-            text-align: center;
-            font-size: 0.9em;
-        }
-        .status {
-            padding: 10px;
-            border-radius: 5px;
-            text-align: center;
-            margin: 10px 0;
-        }
-        .connected { background: #d4edda; color: #155724; }
-        .disconnected { background: #f8d7da; color: #721c24; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🌡️ Real-Time Sensor Monitor</h1>
-        
-        <div id="status" class="status connected">
-            ✅ Connected - Receiving real-time updates
-        </div>
-        
-        <div class="sensor-value">
-            <span id="sensor-value">0</span>
-        </div>
-        
-        <div class="timestamp">
-            Last updated: <span id="timestamp">-</span>
-        </div>
-        
-        <div style="margin-top: 30px; text-align: center;">
-            <small>Requests received: <span id="request-count">0</span></small>
-        </div>
-    </div>
-
+    # Serve your HTML file directly
+    with open('index.html', 'r') as f:
+        html_content = f.read()
+    
+    # Replace the static initialization with dynamic data
+    html_content = html_content.replace(
+        'updateDisplay(150);', 
+        f'updateDisplay({sensor_data});'
+    )
+    
+    # Add the SSE connection script
+    sse_script = """
     <script>
-        const sensorElement = document.getElementById('sensor-value');
-        const timestampElement = document.getElementById('timestamp');
-        const statusElement = document.getElementById('status');
-        const requestCountElement = document.getElementById('request-count');
-        
-        // Function to format timestamp
-        function formatTimestamp(timestamp) {
-            const date = new Date(timestamp);
-            return date.toLocaleString();
-        }
-        
-        // Server-Sent Events connection
+        // Server-Sent Events connection for real-time updates
         const eventSource = new EventSource('/stream');
         
         eventSource.onmessage = function(event) {
             const data = JSON.parse(event.data);
-            
-            // Update sensor value with animation
-            sensorElement.style.transform = 'scale(1.1)';
-            sensorElement.style.color = '#e74c3c';
-            sensorElement.textContent = data.value;
-            
-            setTimeout(() => {
-                sensorElement.style.transform = 'scale(1)';
-                sensorElement.style.color = '#2c3e50';
-            }, 300);
-            
-            // Update timestamp
-            timestampElement.textContent = formatTimestamp(data.timestamp);
-            
-            // Update connection status
-            statusElement.className = 'status connected';
-            statusElement.textContent = '✅ Connected - Receiving real-time updates';
-        };
-        
-        eventSource.onopen = function() {
-            statusElement.className = 'status connected';
-            statusElement.textContent = '✅ Connected - Receiving real-time updates';
+            updateFromSensor(data.value);
         };
         
         eventSource.onerror = function(event) {
-            statusElement.className = 'status disconnected';
-            statusElement.textContent = '❌ Disconnected - Attempting to reconnect...';
+            console.log('SSE connection error:', event);
         };
-        
-        // Periodically update request count
-        function updateRequestCount() {
-            fetch('/status')
-                .then(response => response.json())
-                .then(data => {
-                    requestCountElement.textContent = data.requests_received;
-                });
-        }
-        
-        // Update request count every 5 seconds
-        setInterval(updateRequestCount, 5000);
-        updateRequestCount(); // Initial call
     </script>
-</body>
-</html>
-"""
+    """
+    
+    # Insert the SSE script before closing body tag
+    html_content = html_content.replace('</body>', sse_script + '</body>')
+    
+    return html_content
 
 @app.route('/stream')
 def stream():
@@ -186,6 +89,24 @@ def stream():
                 message_queues.remove(q)
     
     return Response(event_stream(), mimetype='text/event-stream')
+
+@app.route('/sense', methods=['POST'])
+def sense():
+    global sensor_data
+    try:
+        data = request.get_json()
+        received_value = data.get('value', 0)
+        sensor_data = received_value
+        
+        print(f"Parking sensor data updated to: {sensor_data}cm")
+        
+        # Send real-time update to all connected clients
+        send_sse_update(sensor_data)
+        
+        return jsonify({'status': 'success', 'value': received_value}), 200
+    except Exception as e:
+        print(f"Error in /sense: {e}")
+        return jsonify({'status': 'error', 'value': -1}), 500
 
 @app.route('/send_data', methods=['POST'])
 def receive_data():
@@ -223,24 +144,6 @@ def receive_data():
             'status': 'error',
             'message': str(e)
         }), 400
-
-@app.route('/sense', methods=['POST'])
-def sense():
-    global sensor_data
-    try:
-        data = request.get_json()
-        received_value = data.get('value', 'No value field')
-        sensor_data = received_value
-        
-        print(f"Sensor data updated to: {sensor_data}")
-        
-        # Send real-time update to all connected clients
-        send_sse_update(sensor_data)
-        
-        return jsonify({'status': 'success', 'value': received_value}), 200
-    except Exception as e:
-        print(e)
-        return jsonify({'status': 'error', 'value': -1}), 500
 
 @app.route('/status', methods=['GET'])
 def status():
