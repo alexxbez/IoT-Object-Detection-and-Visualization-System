@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sensor de Proximidad</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 24px;
+            font-weight: 300;
+            letter-spacing: 3px;
+        }
+
+        .sensor-display {
+            position: relative;
+            width: 100%;
+            height: 280px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            margin-bottom: 30px;
+            overflow: hidden;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .proximity-line {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.2);
+            stroke-width: 8;
+            stroke-linecap: round;
+            transition: all 0.3s ease;
+        }
+
+        .proximity-line.active {
+            stroke: rgba(255, 255, 255, 0.9);
+            stroke-width: 10;
+            stroke-linecap: round;
+            filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.6));
+        }
+
+        .proximity-line.danger {
+            stroke: #ff3333;
+            stroke-width: 12;
+            stroke-linecap: round;
+            filter: drop-shadow(0 0 15px rgba(255, 51, 51, 0.8));
+            animation: pulse-line 0.8s ease-in-out infinite;
+        }
+
+        @keyframes pulse-line {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .car-shape {
+            fill: rgba(255, 255, 255, 0.1);
+            stroke: rgba(255, 255, 255, 0.3);
+            stroke-width: 2;
+        }
+
+        .distance-display {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .distance-value {
+            font-size: 64px;
+            font-weight: 700;
+            transition: color 0.3s ease;
+            color: white;
+        }
+
+        .distance-unit {
+            font-size: 24px;
+            color: #aaa;
+            margin-left: 5px;
+        }
+
+        .status-text {
+            font-size: 16px;
+            margin-top: 10px;
+            font-weight: 300;
+            color: #aaa;
+        }
+
+        .danger-mode {
+            background: linear-gradient(135deg, #2d0a0a 0%, #4a0a0a 100%);
+        }
+
+        .controls {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .slider-container {
+            margin: 20px 0;
+        }
+
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(255, 255, 255, 0.3);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 10px rgba(255, 255, 255, 0.3);
+        }
+
+        .info {
+            text-align: center;
+            color: #666;
+            font-size: 13px;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="mainContainer">
+        <h1>PARKING SENSOR</h1>
+        
+        <div class="distance-display">
+            <span class="distance-value" id="distanceValue">150</span>
+            <span class="distance-unit">cm</span>
+            <div class="status-text" id="statusText">Safe distance</div>
+        </div>
+
+        <div class="sensor-display">
+            <svg viewBox="0 0 400 280" id="sensorSvg">
+                <!-- Semicírculos concéntricos (como ondas WiFi) -->
+                <path class="proximity-line" id="line5" 
+                      d="M 80 280 A 120 120 0 0 1 320 280" />
+                <path class="proximity-line" id="line4" 
+                      d="M 110 280 A 90 90 0 0 1 290 280" />
+                <path class="proximity-line" id="line3" 
+                      d="M 140 280 A 60 60 0 0 1 260 280" />
+                <path class="proximity-line" id="line2" 
+                      d="M 170 280 A 30 30 0 0 1 230 280" />
+                <path class="proximity-line" id="line1" 
+                      d="M 185 280 A 15 15 0 0 1 215 280" />
+                
+                <!-- Rectángulo del carro (vista superior simplificada) -->
+                <rect class="car-shape" x="175" y="265" width="50" height="30" rx="3" />
+            </svg>
+        </div>
+
+        <div class="controls">
+            <div class="slider-container">
+                <input type="range" min="0" max="200" value="150" class="slider" id="distanceSlider">
+            </div>
+            <div class="info">Simulador - Ajusta el slider para probar</div>
+        </div>
+    </div>
+
+    <script>
+        const slider = document.getElementById('distanceSlider');
+        const distanceValue = document.getElementById('distanceValue');
+        const statusText = document.getElementById('statusText');
+        const lines = [
+            document.getElementById('line1'),
+            document.getElementById('line2'),
+            document.getElementById('line3'),
+            document.getElementById('line4'),
+            document.getElementById('line5')
+        ];
+
+        function updateDisplay(distance) {
+            distanceValue.textContent = distance;
+            
+            // Determinar cuántas líneas activar (más cerca = más líneas)
+            // Línea 1: 0-40cm, Línea 2: 0-80cm, Línea 3: 0-120cm, Línea 4: 0-160cm, Línea 5: 0-200cm
+            const thresholds = [40, 80, 120, 160, 200];
+            
+            // Actualizar estado del texto
+            if (distance < 30) {
+                statusText.textContent = 'DANGER - Too close!';
+                statusText.style.color = '#ff3333';
+                distanceValue.style.color = '#ff3333';
+                document.body.classList.add('danger-mode');
+            } else if (distance < 100) {
+                statusText.textContent = 'Warning - Getting close';
+                statusText.style.color = '#ffa500';
+                distanceValue.style.color = '#ffa500';
+                document.body.classList.remove('danger-mode');
+            } else {
+                statusText.textContent = 'Safe distance';
+                statusText.style.color = '#aaa';
+                distanceValue.style.color = 'white';
+                document.body.classList.remove('danger-mode');
+            }
+
+            // Actualizar líneas
+            lines.forEach((line, index) => {
+                line.classList.remove('active', 'danger');
+                
+                if (distance <= thresholds[index]) {
+                    if (distance < 30) {
+                        line.classList.add('danger');
+                    } else {
+                        line.classList.add('active');
+                    }
+                }
+            });
+        }
+
+        slider.addEventListener('input', (e) => {
+            updateDisplay(parseInt(e.target.value));
+        });
+
+        // Inicializar
+        updateDisplay(150);
+
+        // Función para actualizar desde ESP32
+        function updateFromSensor(distance) {
+            slider.value = distance;
+            updateDisplay(distance);
+        }
+
+        // Ejemplo de actualización automática (descomentar para probar)
+        // setInterval(() => {
+        //     const randomDistance = Math.floor(Math.random() * 200);
+        //     updateFromSensor(randomDistance);
+        // }, 1000);
+    </script>
+</body>
+</html>
