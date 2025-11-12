@@ -8,6 +8,7 @@ import datetime
 import json
 import time
 import queue
+import os
 
 app = Flask(__name__)
 
@@ -25,6 +26,13 @@ def send_sse_update(data):
             q.put(data)
         except:
             message_queues.remove(q)
+
+@app.route('/update', methods=["POST"])
+def update():
+    img_bytes = request.data
+    os.makerdirs("images", 0o777, exist_ok=False)
+
+    file_name = f"{images}" 
 
 @app.route('/')
 def home():
