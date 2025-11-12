@@ -7,4 +7,4 @@ RUN uv sync
 
 EXPOSE 5000
 
-CMD ["fastapi", "dev", "main.py"]
+CMD [".venv/bin/uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "5000"]
