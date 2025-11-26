@@ -2,7 +2,7 @@ import os
 import time
 import queue
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Request
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -28,21 +28,24 @@ async def root():
 
 @app.post("/api/ultrasonic-sensor/send")
 async def send_ultrasonic_sensor(data: ThreeSensorReadings, device_id: int):
-    ultrasonic_cache.put_nowait((data.left.distance, data.right.distance, data.distance.distance))
+    ultrasonic_cache.put_nowait((data.left.distance, data.center.distance, data.right.distance))
 
     response = (
         supabase.table("sensor_readings")
         .insert({ "sensor_id": data.left.sensor_id, "distance": data.left.distance })
+        .execute()
     )
 
     response = (
         supabase.table("sensor_readings")
         .insert({ "sensor_id": data.center.sensor_id, "distance": data.center.distance })
+        .execute()
     )
 
     response = (
         supabase.table("sensor_readings")
         .insert({ "sensor_id": data.right.sensor_id, "distance": data.right.distance })
+        .execute()
     )
 
     return { "status": "success"}
@@ -69,8 +72,9 @@ async def get_instant_ultrasonic_sensor():
     return { "left": left, "center": center, "right": right }
 
 @app.post("/api/camera/send")
-async def send_camera(device_id: int, module_id: int, image: UploadFile = File(...)):
-    img_bytes = await image.read()
+# async def send_camera(device_id: int, module_id: int, image: UploadFile = File(...)):
+async def send_camera(device_id: int, module_id: int, request: Request):
+    img_bytes = await request.body()
     # img_cache.put_nowait(img_bytes)
     file_name: str = f"nonannotated/{time.time()}.jpg"
     response = (
@@ -81,19 +85,23 @@ async def send_camera(device_id: int, module_id: int, image: UploadFile = File(.
             file_options={ "content_type": "image/jpeg" }
         )
     )
+    print("image stored in supabase storage")
 
     response = (
-        supabase.table("image_frame")
+        supabase.table("image_frames")
         .insert({
             "device_id": device_id,
             "module_id": module_id,
             "image_path": file_name
         })
+        .execute()
     )
+    print("image path inserted in database")
     # FIXME: THIS
     frame_id = response.data[0]["frame_id"]
 
     detections = analyze_image(img_bytes)
+    if not detections: return { "status": "success" }
 
     for label, conf, x in detections:
         response = (
@@ -102,9 +110,11 @@ async def send_camera(device_id: int, module_id: int, image: UploadFile = File(.
                 "frame_id": frame_id,
                 "object_class": label,
                 "confidence": conf,
-                "x": x
+                "x": int(x)
             })
+            .execute()
         )
+        print("detections stored in database")
 
     return { "status": "success" }
 
