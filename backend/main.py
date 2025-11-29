@@ -3,6 +3,7 @@ import time
 import queue
 
 from fastapi import FastAPI, UploadFile, File, Request
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -20,6 +21,14 @@ ultrasonic_cache = queue.Queue()
 detections_cache = queue.Queue()
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 async def root():
@@ -100,17 +109,18 @@ async def send_camera(device_id: int, module_id: int, request: Request):
     # FIXME: THIS
     frame_id = response.data[0]["frame_id"]
 
-    detections = analyze_image(img_bytes)
+    detections = await analyze_image(img_bytes)
     if not detections: return { "status": "success" }
 
-    for label, conf, x in detections:
+    for label, conf, x, width in detections:
         response = (
             supabase. table("object_detections")
             .insert({
                 "frame_id": frame_id,
                 "object_class": label,
                 "confidence": conf,
-                "x": int(x)
+                "x": int(x),
+                "width": width
             })
             .execute()
         )
@@ -121,8 +131,8 @@ async def send_camera(device_id: int, module_id: int, request: Request):
 @app.get("/api/camera/get/latest")
 async def get_latest_camera(device_id: int):
     response = (
-        supabase.table("image_frame")
-        .select("image_path")
+        supabase.table("image_frames")
+        .select("image_path, frame_id")
         .eq("device_id", device_id)
         .order("timestamp", desc=True)
         .limit(1)
@@ -130,7 +140,32 @@ async def get_latest_camera(device_id: int):
     )
 
     path = response.data[0]["image_path"]
-    return { "image_path": path }
+    frame_id = response.data[0]["frame_id"]
+    img = (
+        supabase.storage
+        .from_("images")
+        .get_public_url(path)
+    )
+
+    det = (
+        supabase.table("object_detections")
+        .select("*")
+        .eq("frame_id", frame_id)
+        .execute()
+    )
+    return { "image_url": img, "detections": det.data }
+
+@app.get("/api/detections/get/latest")
+async def get_latest_detection(device_id: int):
+    response = (
+        supabase.table("object_detections")
+        .select("*, image_frames(device_id)")
+        .eq("image_frames.device_id", device_id)
+        .order("timestamp", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return response.data
 
 if __name__ == "__main__":
     import uvicorn
